@@ -11,7 +11,7 @@
 var path = require('path');
 var fs = require('fs');
 var crypto = require('crypto');
-var AWS = require('aws-sdk');
+var AWS = require('@aws-sdk/client-s3');
 var mime = require('mime-types');
 var _ = require('lodash');
 var async = require('async');
@@ -25,9 +25,6 @@ module.exports = function (grunt) {
 
 		var options = this.options({
 			access: 'public-read',
-			accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-			secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-			sessionToken: process.env.AWS_SESSION_TOKEN,
 			uploadConcurrency: 1,
 			downloadConcurrency: 1,
 			copyConcurrency: 1,
@@ -43,6 +40,13 @@ module.exports = function (grunt) {
 			changedFiles: 'aws_s3_changed',
 			compressionTypes: {'.br': 'br', '.gz': 'gzip'}
 		});
+
+		if (options.accessKeyId || options.secretAccessKey || options.sessionToken) {
+			grunt.fatal('The accessKeyId, secretAccessKey and sessionToken options were removed, use options.credentials instead');
+		}
+		if (options.awsProfile) {
+			grunt.fatal('The awsProfile option was removed, use options.credentials = fromIni({ profile: "profile-name" }) instead');
+		}
 
 		// To deprecate
 		if (options.concurrency !== undefined) {
@@ -60,11 +64,6 @@ module.exports = function (grunt) {
 		// Replace the AWS SDK by the mock package if we're testing
 		if (options.mock) {
 			AWS = require('mock-aws-s3');
-		}
-
-		if (options.awsProfile) {
-			var credentials = new AWS.SharedIniFileCredentials({profile: options.awsProfile});
-			AWS.config.credentials = credentials;
 		}
 
 		if (['dots','progressBar','none'].indexOf(options.progress) < 0) {
@@ -86,16 +85,9 @@ module.exports = function (grunt) {
 			});
 		};
 
+		// only used for output text
 		var getObjectURL = function (file) {
-
-			file = file || '';
-			var prefix = ''
-
-			if (!options.mock) {
-				prefix = s3.endpoint.href
-			}
-
-			return prefix + options.bucket + '/' + file;
+			return 	`s3://${options.bucket}/${file || ''}`;
 		};
 
 		// Get the key URL relative to a path string
@@ -194,9 +186,7 @@ module.exports = function (grunt) {
 
 		var s3_options = {
 			bucket: options.bucket,
-			accessKeyId: options.accessKeyId,
-			secretAccessKey: options.secretAccessKey,
-			sessionToken: options.sessionToken
+			credentials: options.credentials,
 		};
 
 		if (!options.region) {
@@ -206,8 +196,28 @@ module.exports = function (grunt) {
 			s3_options.region = options.region;
 		}
 
+		if ('sslEnabled' in options) {
+			grunt.log.writeln('The sslEnabled option is ignored, use http:// or https:// in the endpoint instead\n'.yellow);
+		}
+
 		if (options.endpoint) {
-			s3_options.endpoint = options.endpoint;
+			var endpoint = options.endpoint;
+			if (!endpoint.startsWith('https://') && !endpoint.startsWith('http://')) {
+				endpoint = `https://${endpoint}`;
+			}
+			s3_options.endpoint = endpoint;
+		}
+		if (options.maxRetries) {
+			s3_options.maxAttempts = options.maxRetries;
+		}
+		if ('s3ForcePathStyle' in options) {
+			s3_options.forcePathStyle = options.s3ForcePathStyle;
+		}
+		if ('signatureVersion' in options && options.signatureVersion !== 'v4') {
+			grunt.log.writeln("The signatureVersion option is ignored, only v4 is supported\n".yellow);
+		}
+		if ('httpOptions' in options) {
+			grunt.log.writeln("The httpOptions option is ignored\n".yellow);
 		}
 
 		if (options.params) {
@@ -215,9 +225,6 @@ module.exports = function (grunt) {
 				grunt.warn('"params" can only be ' + put_params.join(', '));
 			}
 		}
-
-		// Allow additional (not required) options
-		_.extend(s3_options, _.pick(options, ['maxRetries', 'sslEnabled', 'httpOptions', 'signatureVersion', 's3ForcePathStyle']));
 
 		var s3 = new AWS.S3(s3_options);
 
@@ -523,10 +530,10 @@ module.exports = function (grunt) {
 
 					}, options.copyConcurrency);
 
-					copy_queue.drain = function () {
+					copy_queue.drain(function () {
 
 						callback(null, to_copy);
-					};
+					});
 
 					if (options.progress === 'progressBar') {
 						var progress = new Progress('[:bar] :current/:total :etas', { total : to_copy.length });
@@ -655,10 +662,10 @@ module.exports = function (grunt) {
 
 					}, options.downloadConcurrency);
 
-					download_queue.drain = function () {
+					download_queue.drain(function () {
 
 						callback(null, to_download);
-					};
+					});
 
 					if(options.progress === 'progressBar'){
 						var progress = new Progress('[:bar] :current/:total :etas', {total : to_download.length});
@@ -779,10 +786,10 @@ module.exports = function (grunt) {
 
 				}, options.uploadConcurrency);
 
-				upload_queue.drain = function () {
+				upload_queue.drain(function () {
 
 					callback(null, task.files);
-				};
+				});
 
 				if (options.progress === 'progressBar') {
 					var progress = new Progress('[:bar] :current/:total :etas', { total : task.files.length });
@@ -868,7 +875,7 @@ module.exports = function (grunt) {
 			}
 		}, 1);
 
-		queue.drain = function () {
+		queue.drain(function () {
 
 			_.each(objects, function (o) {
 
@@ -905,7 +912,7 @@ module.exports = function (grunt) {
 			grunt.config.set(options.changedFiles, uploadedFiles)
 
 			done()
-		};
+		});
 
 		if (objects.length === 0) {
 			queue.drain()
