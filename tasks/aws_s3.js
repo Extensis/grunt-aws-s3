@@ -563,7 +563,7 @@ module.exports = function (grunt) {
 			});
 		};
 
-		var doDownload = function (object, callback) {
+		var doDownload = async function (object, callback) {
 
 			if (options.debug || !object.need_download || object.excluded) {
 				callback(null, false);
@@ -572,21 +572,36 @@ module.exports = function (grunt) {
 				grunt.file.mkdir(path.dirname(object.dest));
 
 				var stream = fs.createWriteStream(object.dest);
-				var s3_object = s3.getObject({ Key: object.Key, Bucket: options.bucket }).createReadStream();
 
-				stream.on('finish', function () {
-					callback(null, true);
-				});
+				try {
+					var item = await s3.getObject({ Key: object.Key, Bucket: options.bucket });
+					var s3_object = item.Body;
 
-				s3_object.on('error', function (err) {
+					if (!s3_object) {
+						s3_object = item.createReadStream();
+					}
+
+					if (s3_object) {
+						stream.on('finish', function () {
+							callback(null, true);
+						});
+
+						s3_object.on('error', function (err) {
+							callback(err);
+						});
+
+						stream.on('error', function (err) {
+							callback(err);
+						});
+
+						s3_object.pipe(stream);
+					} else {
+						callback(new Error('No streamable object to download'));
+					}
+				}
+				catch (err) {
 					callback(err);
-				});
-
-				stream.on('error', function (err) {
-					callback(err);
-				});
-
-				s3_object.pipe(stream);
+				}
 			}
 			else {
 				s3.getObject({ Key: object.Key, Bucket: options.bucket }, function (err, data) {
