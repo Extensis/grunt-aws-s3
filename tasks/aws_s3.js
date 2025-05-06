@@ -320,6 +320,9 @@ module.exports = function (grunt) {
 				}
 				else {
 					filePair.params = _.defaults(filePair.params || {}, options.params);
+					if (filePair.params.Expires && !(filePair.params.Expires instanceof Date)) {
+						filePair.params.Expires = new Date(filePair.params.Expires);
+					}
 					_.defaults(filePair, filePairOptions);
 
 					filePair.src.forEach(function (src) {
@@ -604,12 +607,16 @@ module.exports = function (grunt) {
 				}
 			}
 			else {
-				s3.getObject({ Key: object.Key, Bucket: options.bucket }, function (err, data) {
+				s3.getObject({ Key: object.Key, Bucket: options.bucket }, async function (err, data) {
 					if (err) {
 						callback(err);
 					}
 					else {
-						grunt.file.write(object.dest, data.Body);
+						var payload = data.Body;
+						if (payload.transformToByteArray) {
+							payload = Buffer.from(await payload.transformToByteArray());
+						}
+						grunt.file.write(object.dest, payload);
 						callback(null, true);
 					}
 				});

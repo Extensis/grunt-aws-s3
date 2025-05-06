@@ -10,6 +10,8 @@
 
 module.exports = function (grunt) {
 
+
+
 	grunt.registerTask('create_bucket', 'creates the bucket folder', function() {
 		grunt.file.mkdir(__dirname + '/test/local/bucket');
 	});
@@ -27,9 +29,14 @@ module.exports = function (grunt) {
 		aws_s3: {
 			test_local: {
 				options: {
-					bucket: __dirname + '/test/local/bucket',
+					...( process.env.USE_S3_BUCKET ? {
+						bucket: process.env.USE_S3_BUCKET,
+						access: 'bucket-owner-full-control'
+					} : {
+						bucket: __dirname + '/test/local/bucket',
+						mock: true,
+					}),
 					uploadConcurrency: 1,
-					mock: true,
 					stream: true
 				},
 				files: [
@@ -37,11 +44,7 @@ module.exports = function (grunt) {
 					{dest: '/', cwd: 'test/local/download/backup/', action: 'download', stream: false},
 					{dest: 'first/otters/updated/', action: 'delete'},
 					{dest: 'punk/', action: 'delete'},
-					{expand: true, cwd: "test/local/upload/otters/river/", src: ['**'], dest: 'second/',
-					params: {
-	          Expires: 1893456000,
-	          CacheControl: 'public, max-age=864000',
-	        }},
+					{expand: true, cwd: "test/local/upload/otters/river/", src: ['**'], dest: 'second/', params: { Expires: 1893456000, CacheControl: 'public, max-age=864000', }},
 					{dest: 'otters/funk/', cwd: 'test/local/download/backup/', action: 'download'},
 					{expand: true, cwd: "test/local/upload/otters/updated/", src: ['**'], dest: 'second/', differential: true},
 					{expand: true, cwd: "test/local/upload/otters/updated/", src: ['**'], dest: 'third/'},
