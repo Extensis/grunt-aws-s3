@@ -15,8 +15,8 @@ tmp
 npm-debug.log
 
 node_modules
-/test/local
-/test/fixtures
+test/local
+test/fixtures
 
 .env
 
